@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Converter — Help</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --accent: #2a9fb8;
+      --accent-soft: rgba(42, 159, 184, 0.14);
+      --bg: #f5f5f7;
+      --card: #ffffff;
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --border: #d2d2d7;
+      --ok: #1f8a4c;
+      --warn: #b36b00;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1c1e;
+        --card: #2c2c2e;
+        --text: #f5f5f7;
+        --muted: #a1a1a6;
+        --border: #3a3a3c;
+        --accent: #5ec8de;
+        --accent-soft: rgba(94, 200, 222, 0.16);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+    h1 {
+      font-size: 1.9rem;
+      margin: 0 0 8px;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: var(--muted);
+      margin: 0 0 24px;
+      font-size: 1.02rem;
+    }
+    nav.toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 28px;
+    }
+    nav.toc a {
+      text-decoration: none;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    h2 {
+      font-size: 1.12rem;
+      margin: 32px 0 10px;
+      color: var(--accent);
+      scroll-margin-top: 16px;
+    }
+    h3 {
+      font-size: 0.98rem;
+      margin: 18px 0 8px;
+    }
+    p, li { font-size: 0.97rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin: 12px 0;
+    }
+    code, kbd {
+      font-family: "SF Mono", Menlo, ui-monospace, monospace;
+      font-size: 0.88em;
+      background: var(--accent-soft);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+    kbd {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      box-shadow: 0 1px 0 var(--border);
+    }
+    ul, ol { padding-left: 1.25rem; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.93rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      margin-right: 4px;
+    }
+    .muted { color: var(--muted); }
+    .footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Audio Converter Help</h1>
+    <p class="subtitle">
+      Convert audio between major formats using the FFmpeg engine embedded in this app.
+      No separate FFmpeg install is required once the app is built.
+    </p>
+
+    <nav class="toc">
+      <a href="#quickstart">Quick start</a>
+      <a href="#queue">Queue</a>
+      <a href="#formats">Formats</a>
+      <a href="#combine">Combine</a>
+      <a href="#m4b">M4B chapters</a>
+      <a href="#settings">Settings</a>
+      <a href="#shortcuts">Shortcuts</a>
+      <a href="#ffmpeg">FFmpeg</a>
+      <a href="#troubleshoot">Troubleshooting</a>
+    </nav>
+
+    <h2 id="quickstart">Quick start</h2>
+    <div class="card">
+      <ol>
+        <li><strong>Add files</strong> — drag audio files or folders onto the drop zone, or click <strong>Add Files</strong>.</li>
+        <li><strong>Choose output</strong> — pick a format and quality options in the right-hand panel.</li>
+        <li><strong>Set destination</strong> — save next to the original, or choose an output folder.</li>
+        <li><strong>Convert</strong> — click <strong>Convert</strong> (or press <kbd>⌘</kbd><kbd>Return</kbd>).</li>
+      </ol>
+      <p class="muted" style="margin-bottom:0">
+        Each file is probed with the embedded <code>ffprobe</code> so you can see duration, codec, sample rate, and channels before converting.
+      </p>
+    </div>
+
+    <h2 id="queue">Working with the queue</h2>
+    <div class="card">
+      <ul>
+        <li>Files appear in the <strong>Queue</strong> list with status badges: Pending, Ready, Converting, Done, or Failed.</li>
+        <li>While converting, a progress bar tracks FFmpeg’s reported position in the file.</li>
+        <li>Right-click a row to <strong>Show Source in Finder</strong>, <strong>Show Output in Finder</strong> (when done), or <strong>Remove</strong>.</li>
+        <li><strong>Clear Finished</strong> removes completed, failed, and cancelled jobs.</li>
+        <li><strong>Clear All</strong> empties the queue (not available while a conversion is running).</li>
+        <li>Folders are scanned recursively for known audio extensions.</li>
+      </ul>
+    </div>
+
+    <h2 id="formats">Supported formats</h2>
+    <div class="card">
+      <h3>Reading (input)</h3>
+      <p>
+        Almost anything FFmpeg can decode, including:
+        <span class="tag">MP3</span>
+        <span class="tag">AAC / M4A</span>
+        <span class="tag">FLAC</span>
+        <span class="tag">WAV</span>
+        <span class="tag">AIFF</span>
+        <span class="tag">Ogg</span>
+        <span class="tag">Opus</span>
+        <span class="tag">WMA</span>
+        <span class="tag">AC-3</span>
+        <span class="tag">CAF</span>
+        <span class="tag">WavPack</span>
+        <span class="tag">APE</span>
+        and many more. Video files with an audio track can also be used — only the audio stream is written.
+      </p>
+
+      <h3>Writing (output)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Format</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>MP3</strong></td>
+            <td>CBR or VBR via LAME. Great compatibility.</td>
+          </tr>
+          <tr>
+            <td><strong>AAC (.aac / .m4a)</strong></td>
+            <td>Lossy; efficient for Apple devices and streaming.</td>
+          </tr>
+          <tr>
+            <td><strong>M4B Audiobook</strong></td>
+            <td>AAC audiobook with chapter markers (Books / podcast apps).</td>
+          </tr>
+          <tr>
+            <td><strong>ALAC</strong></td>
+            <td>Apple Lossless in an M4A container.</td>
+          </tr>
+          <tr>
+            <td><strong>FLAC</strong></td>
+            <td>Lossless; adjustable compression level 0–12.</td>
+          </tr>
+          <tr>
+            <td><strong>WAV / AIFF / CAF</strong></td>
+            <td>Uncompressed PCM (16/24/32-bit or float).</td>
+          </tr>
+          <tr>
+            <td><strong>Ogg (Opus)</strong></td>
+            <td>Opus audio in an Ogg container (<code>.ogg</code>).</td>
+          </tr>
+          <tr>
+            <td><strong>Opus / WebM</strong></td>
+            <td>Modern lossy; excellent quality at low bitrates.</td>
+          </tr>
+          <tr>
+            <td><strong>WMA, AC-3, MP2, WavPack</strong></td>
+            <td>Additional legacy and specialty targets.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin-bottom:0">
+        Stock Homebrew FFmpeg builds often omit <code>libvorbis</code>, so classic Ogg Vorbis is not used.
+        Choose <strong>Ogg (Opus)</strong> or <strong>Opus</strong> instead.
+      </p>
+    </div>
+
+    <h2 id="combine">Combine files (any format)</h2>
+    <div class="card">
+      <p>
+        Turn on <strong>Combine queue into one file</strong> to join every item in the queue into a
+        <em>single</em> output in the format you selected (MP3, FLAC, M4A, WAV, …).
+      </p>
+      <ul>
+        <li>Order is the queue order — drag rows or use <strong>Move Up / Move Down</strong>.</li>
+        <li>Mixed codecs, sample rates, and mono/stereo sources are normalized before joining.</li>
+        <li>No chapter markers are written (continuous audio). For chapters, use <strong>M4B</strong>.</li>
+        <li>Optional title / artist / album / file name apply to the combined file.</li>
+        <li>Cover art is taken from the first source that has embedded artwork.</li>
+      </ul>
+    </div>
+
+    <h2 id="m4b">Chaptered M4B audiobooks</h2>
+    <div class="card">
+      <p>
+        Choose <strong>M4B Audiobook (chapters)</strong> to build an audiobook for Apple Books and other M4B players.
+      </p>
+      <h3>Combine queue into one chaptered M4B</h3>
+      <ol>
+        <li>Add one audio file per chapter (or drop a folder of tracks).</li>
+        <li>Reorder chapters by dragging rows or using <strong>Move Up / Move Down</strong> in the context menu.</li>
+        <li>Edit each <strong>chapter title</strong> inline (defaults come from the file name or title tag).</li>
+        <li>Set <strong>Book title</strong>, <strong>Author</strong>, and optional album / file name in the sidebar.</li>
+        <li>Click <strong>Create M4B</strong> — files are concatenated, encoded to AAC, and chapter markers are written.</li>
+      </ol>
+      <p class="muted">
+        Queue order = chapter order. Output is a single <code>.m4b</code> next to the first file (or in your chosen folder).
+        Mixed formats (e.g. MP3 + M4A), sample rates, and mono/stereo chapters are supported — each file is normalized before joining.
+      </p>
+      <h3>Per-file M4B</h3>
+      <p>
+        Turn off <strong>Combine queue…</strong> to convert each source to its own <code>.m4b</code>.
+        Enable <strong>Preserve chapters from source</strong> to keep markers already present in the file.
+      </p>
+    </div>
+
+    <h2 id="settings">Output settings</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>What it does</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Format</strong></td>
+            <td>Target container and codec for every job in the next conversion run.</td>
+          </tr>
+          <tr>
+            <td><strong>Bitrate</strong></td>
+            <td>Target kbps for lossy formats (e.g. 128–320 for MP3).</td>
+          </tr>
+          <tr>
+            <td><strong>Variable bitrate (VBR)</strong></td>
+            <td>For MP3, enables LAME quality mode. For Opus-family formats, enables VBR mode while still using the bitrate target.</td>
+          </tr>
+          <tr>
+            <td><strong>Joint stereo (MP3 VBR)</strong></td>
+            <td>When MP3 VBR is on, choose mid/side joint stereo (default, efficient) or simple stereo (independent L/R). Passed to LAME as <code>-joint_stereo</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Sample rate</strong></td>
+            <td>Keep source rate, or force a common rate (44.1 kHz, 48 kHz, …).</td>
+          </tr>
+          <tr>
+            <td><strong>Channels</strong></td>
+            <td>Keep source layout, or force mono / stereo.</td>
+          </tr>
+          <tr>
+            <td><strong>PCM / FLAC options</strong></td>
+            <td>Bit depth for WAV/AIFF/CAF; compression level for FLAC.</td>
+          </tr>
+          <tr>
+            <td><strong>Save next to original</strong></td>
+            <td>When on, writes <code>Song.ext</code> beside the source. When off, uses the chosen output folder.</td>
+          </tr>
+          <tr>
+            <td><strong>Overwrite existing</strong></td>
+            <td>If off, conversion fails when the destination file already exists.</td>
+          </tr>
+          <tr>
+            <td><strong>Copy metadata</strong></td>
+            <td>When on, tags (title, artist, album, …) are mapped from the source when the container supports them.</td>
+          </tr>
+          <tr>
+            <td><strong>Embedded artwork</strong></td>
+            <td>Always preserved when the destination supports it (MP3, M4A/M4B, ALAC, FLAC, and others). Cover art is extracted from the source and re-attached as an album picture. Queue rows show <em>Art</em> when a cover is detected. WAV/AIFF/raw AAC cannot store cover art.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin-bottom:0">
+        Settings are applied when you start conversion. Change them between batches as needed.
+        The app will not overwrite a source file with the same path and extension — pick another format or folder.
+      </p>
+    </div>
+
+    <h2 id="shortcuts">Keyboard shortcuts</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Shortcut</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Add files…</td>
+            <td><kbd>⌘</kbd><kbd>O</kbd></td>
+          </tr>
+          <tr>
+            <td>Start conversion</td>
+            <td><kbd>⌘</kbd><kbd>Return</kbd></td>
+          </tr>
+          <tr>
+            <td>Cancel conversion</td>
+            <td><kbd>⌘</kbd><kbd>.</kbd></td>
+          </tr>
+          <tr>
+            <td>Audio Converter Help</td>
+            <td>Help menu · or the <strong>?</strong> button in the toolbar</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="ffmpeg">Embedded FFmpeg</h2>
+    <div class="card">
+      <p>
+        At build time, <code>build-app.sh</code> copies <code>ffmpeg</code>, <code>ffprobe</code>, and their libraries into
+        the app bundle (<code>Contents/MacOS</code> and <code>Contents/Frameworks</code>).
+      </p>
+      <ul>
+        <li>The status line and Settings window show whether FFmpeg is <strong>embedded</strong>, from the <strong>system</strong>, or <strong>missing</strong>.</li>
+        <li>Open <strong>Audio Converter → Settings…</strong> to see the full version string and recheck availability.</li>
+        <li>If FFmpeg is missing, rebuild with Homebrew FFmpeg installed: <code>brew install ffmpeg && ./build-app.sh</code>.</li>
+      </ul>
+    </div>
+
+    <h2 id="troubleshoot">Troubleshooting</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Problem</th>
+            <th>What to try</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>FFmpeg not found</td>
+            <td>Run <code>./build-app.sh</code> from the project folder. Requires <code>brew install ffmpeg</code> at build time only.</td>
+          </tr>
+          <tr>
+            <td>File shows Failed after probe</td>
+            <td>The file may be corrupt, DRM-protected, or not an audio stream FFmpeg can open. Try another source copy.</td>
+          </tr>
+          <tr>
+            <td>Conversion failed / unknown encoder</td>
+            <td>Your embedded FFmpeg build may lack that encoder. Prefer MP3, AAC, FLAC, Opus, WAV, or ALAC.</td>
+          </tr>
+          <tr>
+            <td>Output already exists</td>
+            <td>Enable <strong>Overwrite existing files</strong>, or change format / destination folder.</td>
+          </tr>
+          <tr>
+            <td>Source and output are the same</td>
+            <td>You chose the same extension as the source with “save next to original”. Pick another format or an output folder.</td>
+          </tr>
+          <tr>
+            <td>App won’t open (Gatekeeper)</td>
+            <td>Right-click the app → <strong>Open</strong>, or run <code>xattr -cr AudioConverter.app</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      Audio Converter <strong>1.1.2</strong> · help ships inside the app bundle as <code>Help.html</code>.
+      FFmpeg is LGPL/GPL depending on how it was built; respect third-party codec licenses if you redistribute the app.
+    </div>
+  </main>
+</body>
+</html>
