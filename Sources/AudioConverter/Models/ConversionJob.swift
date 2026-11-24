@@ -43,6 +43,10 @@ struct AudioProbeInfo: Equatable {
     var sampleRate: Int?
     var channels: Int?
     var codecName: String?
+    /// Integer bit depth from the audio stream. Nil when the probe could not tell.
+    var bitsPerSample: Int?
+    /// True for floating-point PCM (`fltp`, `flt`, `dbl`).
+    var floatingPoint: Bool
     var tags: [String: String]
     var chapters: [ChapterMarker]
     /// Absolute stream index of an attached cover image, if any.
@@ -64,6 +68,15 @@ struct AudioProbeInfo: Equatable {
     var summary: String {
         var parts: [String] = []
         if let codec = codecName { parts.append(codec.uppercased()) }
+        if floatingPoint {
+            if let bits = bitsPerSample, bits > 0 {
+                parts.append("\(bits)-bit float")
+            } else {
+                parts.append("float")
+            }
+        } else if let bits = bitsPerSample, bits > 0 {
+            parts.append("\(bits)-bit")
+        }
         if let sr = sampleRate { parts.append("\(sr) Hz") }
         if let ch = channels {
             parts.append(ch == 1 ? "Mono" : ch == 2 ? "Stereo" : "\(ch) ch")
@@ -90,8 +103,32 @@ final class ConversionJob: Identifiable, ObservableObject {
     @Published var logTail: String = ""
     /// Chapter title used when combining into a chaptered M4B (queue order).
     @Published var chapterTitle: String
+    /// Folder for a CD rip. The format extension is added when conversion starts.
+    var outputDirectoryOverride: URL?
+    /// File name without an extension. Shown in the queue in place of the CD track's AIFF name.
+    var outputBaseNameOverride: String?
+    /// Tags written with `-metadata`, after any tags copied from the source.
+    var metadataOverrides: [String: String] = [:]
+    /// JPEG or PNG to embed when the destination format can hold a picture.
+    var coverFileURL: URL?
+    /// Audio CD tracks have no embedded picture. Skip the probe that would spin the disc to look.
+    var skipSourceCoverScan = false
+    /// When the table of contents already supplied a duration, don't open the disc again to probe it.
+    var skipSourceProbe = false
 
-    var fileName: String { sourceURL.lastPathComponent }
+    var fileName: String {
+        if let base = outputBaseNameOverride, !base.isEmpty {
+            return base
+        }
+        return sourceURL.lastPathComponent
+    }
+
+    /// Probe line for the queue. A looked-up cover is not a stream on the CD, so it is added here.
+    var queueDetail: String {
+        let base = probe?.summary ?? ""
+        guard coverFileURL != nil, probe?.hasCoverArt != true else { return base }
+        return base.isEmpty ? "Art" : base + " · Art"
+    }
 
     init(sourceURL: URL) {
         self.id = UUID()

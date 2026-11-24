@@ -5,6 +5,23 @@ struct M4BChapterSource: Sendable {
     var url: URL
     var title: String
     var durationSeconds: Double
+    /// Probed integer depth. Nil when the file was not probed or the depth is unknown.
+    var bitsPerSample: Int?
+    var floatingPoint: Bool
+
+    init(
+        url: URL,
+        title: String,
+        durationSeconds: Double,
+        bitsPerSample: Int? = nil,
+        floatingPoint: Bool = false
+    ) {
+        self.url = url
+        self.title = title
+        self.durationSeconds = durationSeconds
+        self.bitsPerSample = bitsPerSample
+        self.floatingPoint = floatingPoint
+    }
 }
 
 enum M4BChapterBuilder {

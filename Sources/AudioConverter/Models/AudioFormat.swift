@@ -196,8 +196,9 @@ enum AudioOutputFormat: String, CaseIterable, Identifiable, Codable, Hashable {
             }
         }
 
-        // Shared resampling / channel options
-        if let rate = settings.sampleRate {
+        // Shared resampling / channel options.
+        // Opus-family encoders only accept 8/12/16/24/48 kHz; an empty selection becomes 48 kHz.
+        if let rate = sampleRateArgument(settings.sampleRate) {
             args += ["-ar", "\(rate)"]
         }
         if let channels = settings.channels {

@@ -17,6 +17,10 @@ BIN_NAME="AudioConverter"
 
 echo "==> Building Audio Converter (release)…"
 swift build -c release
+BIN_DIR="$(swift build -c release --show-bin-path)"
+
+echo "==> Self-test…"
+"${BIN_DIR}/${BIN_NAME}" --self-test
 
 echo "==> Assembling ${APP}…"
 rm -rf "${APP}"
@@ -24,13 +28,13 @@ mkdir -p "${APP}/Contents/MacOS"
 mkdir -p "${APP}/Contents/Resources"
 mkdir -p "${APP}/Contents/Frameworks"
 
-cp ".build/release/${BIN_NAME}" "${APP}/Contents/MacOS/${BIN_NAME}"
+cp "${BIN_DIR}/${BIN_NAME}" "${APP}/Contents/MacOS/${BIN_NAME}"
 chmod +x "${APP}/Contents/MacOS/${BIN_NAME}"
 cp AppInfo.plist "${APP}/Contents/Info.plist"
 
 # Copy SPM resource bundle if present
-if [[ -d ".build/release/AudioConverter_AudioConverter.bundle" ]]; then
-  cp -R ".build/release/AudioConverter_AudioConverter.bundle" \
+if [[ -d "${BIN_DIR}/AudioConverter_AudioConverter.bundle" ]]; then
+  cp -R "${BIN_DIR}/AudioConverter_AudioConverter.bundle" \
     "${APP}/Contents/Resources/"
 fi
 

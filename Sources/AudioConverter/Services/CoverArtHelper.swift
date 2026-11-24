@@ -62,6 +62,19 @@ enum CoverArtHelper {
         return false
     }
 
+    /// Tags that mark the attached picture as the front cover.
+    /// MP3 is written as ID3v2.3 because Finder and Music skip pictures stored in ID3v2.4.
+    static func pictureTagArguments(for format: AudioOutputFormat) -> [String] {
+        var args = [
+            "-metadata:s:v:0", "title=Album cover",
+            "-metadata:s:v:0", "comment=Cover (front)",
+        ]
+        if format == .mp3 {
+            args += ["-id3v2_version", "3"]
+        }
+        return args
+    }
+
     /// FFmpeg args to map audio from input 0 and cover JPEG from input `coverInputIndex`.
     static func mappingArgs(includeCover: Bool, coverInputIndex: Int = 1) -> [String] {
         if includeCover {

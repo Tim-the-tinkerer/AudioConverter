@@ -1,6 +1,6 @@
 # Audio Converter for Mac
 
-**Version 1.1.2**
+**Version 1.2.0**
 
 A native **Swift / SwiftUI** macOS app that converts audio between major formats using an **embedded FFmpeg** build. No system FFmpeg install is required once the app is built.
 
@@ -23,9 +23,10 @@ See [CHANGELOG.md](CHANGELOG.md) for full release history.
 - Bitrate, VBR quality, sample rate, mono/stereo
 - Metadata copy, overwrite control, output beside source or to a chosen folder
 - **Embedded artwork** preserved when the target supports covers
+- **Rip an audio CD** (⌘R): track list, MusicBrainz lookup, tags, and cover art, encoded with the same format settings
 - Progress from FFmpeg `time=` output
 - In-app **Help** (Help menu, toolbar, Settings, **⇧⌘/**)
-- FFmpeg + ffprobe **bundled inside the `.app`** with required dylibs
+- FFmpeg **9.1** + ffprobe **bundled inside the `.app`** with required dylibs
 
 ### Combine (any format)
 
@@ -35,7 +36,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full release history.
 4. Optional title / artist / album / file name  
 5. Click **Combine → EXT**  
 
-Mixed codecs and sample rates are normalized before joining.
+Mixed codecs and sample rates are normalized before joining. FLAC, ALAC, and WavPack keep the widest source bit depth. Opus, Ogg (Opus), and WebM (Opus) default to 48 kHz.
 
 ### Chaptered M4B
 
@@ -53,17 +54,19 @@ Mixed codecs and sample rates are normalized before joining.
 
 - macOS 13+
 - Xcode Command Line Tools / Swift 5.9+
-- **FFmpeg installed via Homebrew** (build time only):
+- **FFmpeg 9.1** is built into `vendor/` by `scripts/build-ffmpeg.sh` (Homebrew’s formula is still 9.0.2). The libraries it links, such as LAME and Opus, come from Homebrew:
 
   ```bash
   brew install ffmpeg
+  ./scripts/build-ffmpeg.sh
   ```
 
 ## Build
 
 ```bash
 cd AudioConverter
-chmod +x build-app.sh scripts/embed-ffmpeg.sh
+chmod +x build-app.sh scripts/embed-ffmpeg.sh scripts/build-ffmpeg.sh
+./scripts/build-ffmpeg.sh   # FFmpeg 9.1 into vendor/; skip if it is already there
 # Optional: regenerate the app icon
 # swift scripts/GenerateAppIcon.swift
 ./build-app.sh
@@ -88,13 +91,18 @@ This will:
 2. Choose **output format** and options in the right panel  
 3. Optionally enable **Combine**  
 4. Set destination (next to originals, or a folder)  
-5. Click **Convert** / **Combine** / **Create M4B**  
+5. Click **Convert** / **Combine** / **Create M4B**
+
+### Rip an audio CD
+
+Insert a music CD, then click **Rip CD** (or **⌘R**). MusicBrainz fills the artist, album, and track titles when it knows the disc, and the front cover is embedded in each file as album art. Tracks are encoded with the sidebar format and saved under `Music/Audio Converter/Artist - Album/`, not onto the disc. Dropping the CD volume on the window opens the same sheet.
 
 ### Keyboard shortcuts
 
 | Action | Shortcut |
 |--------|----------|
 | Add files | **⌘O** |
+| Rip audio CD | **⌘R** |
 | Start convert / combine | **⌘↩** |
 | Cancel | **⌘.** |
 | Help | **⇧⌘/** (or Help menu / toolbar / Settings) |
@@ -106,11 +114,12 @@ In-app help (`Help.html`) covers formats, combine, M4B chapters, MP3 VBR/joint s
 ```
 AudioConverter/
 ├── Package.swift
-├── AppInfo.plist          # version 1.1.2
+├── AppInfo.plist          # version 1.2.0
 ├── CHANGELOG.md
 ├── README.md
 ├── build-app.sh
 ├── scripts/
+│   ├── build-ffmpeg.sh  # FFmpeg 9.1 into vendor/
 │   ├── embed-ffmpeg.sh
 │   └── GenerateAppIcon.swift
 ├── Assets/                # AppIcon.icns, preview PNG
@@ -120,7 +129,7 @@ AudioConverter/
     ├── ContentView.swift
     ├── AudioConverterHelp.swift
     ├── Models/            # formats, settings, jobs
-    ├── Services/          # FFmpeg, probe, convert, cover art, M4B
+    ├── Services/          # FFmpeg, probe, convert, cover art, M4B, CD rip
     ├── Views/             # drop zone, queue, settings, help window
     └── Resources/Help.html
 ```
@@ -129,7 +138,7 @@ AudioConverter/
 
 `scripts/embed-ffmpeg.sh`:
 
-1. Copies Homebrew `ffmpeg` and `ffprobe` into `Contents/MacOS/`
+1. Copies `vendor/bin` FFmpeg when that build exists, otherwise Homebrew `ffmpeg` and `ffprobe`, into `Contents/MacOS/`
 2. Recursively gathers dependent dylibs into `Contents/Frameworks/`
 3. Rewrites install names for `@rpath` / `@executable_path/../Frameworks`
 4. Ad-hoc signs nested binaries
@@ -151,10 +160,13 @@ Provided as source for personal use. **FFmpeg** is LGPL/GPL depending on the bui
 | Dyld errors after moving the app | Rebuild so rpaths are rewritten |
 | Gatekeeper blocks open | Right-click → Open, or `xattr -cr AudioConverter.app` |
 | No cover art on WAV/AIFF | Those formats don’t support embedded pictures |
+| Rip CD shows no disc | Wait until Finder mounts the music CD, then click Refresh. Data CDs are ordinary files |
+| MusicBrainz has no entry | Type the names. Lookup is optional |
 
 ## Development
 
 ```bash
 swift build
 swift run   # uses system ffmpeg if not running from .app
+.build/debug/AudioConverter --self-test
 ```

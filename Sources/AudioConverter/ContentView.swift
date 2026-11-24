@@ -26,10 +26,24 @@ struct ContentView: View {
         .onAppear {
             model.refreshFFmpegStatus()
         }
+        .sheet(isPresented: Binding(
+            get: { model.presentCDRipSheet },
+            set: { model.presentCDRipSheet = $0 }
+        )) {
+            CDRipSheet()
+                .environmentObject(model)
+        }
         // Back-compat if anything still posts the help notification.
         .onReceive(NotificationCenter.default.publisher(for: .openAudioConverterHelp)) { _ in
             openWindow(id: AudioConverterHelp.windowID)
         }
+    }
+
+    private var ripButtonTitle: String {
+        guard let disc = model.audioCDs.first else { return "Rip CD" }
+        let count = disc.ripableTrackCount
+        if count == 0 { return "Rip CD" }
+        return "Rip CD (\(count))"
     }
 
     private var header: some View {
@@ -49,6 +63,13 @@ struct ContentView: View {
                 Label("Help", systemImage: "questionmark.circle")
             }
             .help("Open Audio Converter Help")
+
+            Button {
+                model.presentCDRipSheet = true
+            } label: {
+                Label(ripButtonTitle, systemImage: "opticaldisc")
+            }
+            .help("Rip an audio CD")
 
             Button {
                 model.openFilePanel()

@@ -108,16 +108,24 @@ struct SettingsPanel: View {
                     .font(.headline)
 
                 Picker("Sample rate", selection: Binding(
-                    get: { model.settings.sampleRate.map(String.init) ?? "source" },
+                    get: { sampleRateSelection },
                     set: { value in
                         model.settings.sampleRate = value == "source" ? nil : Int(value)
                     }
                 )) {
-                    Text(model.settings.combineQueue ? "44.1 kHz (default when combining)" : "Same as source")
-                        .tag("source")
-                    ForEach(ConversionSettings.commonSampleRates, id: \.self) { rate in
+                    if !model.settings.outputFormat.restrictsSampleRate {
+                        Text(model.settings.combineQueue ? "44.1 kHz (default when combining)" : "Same as source")
+                            .tag("source")
+                    }
+                    ForEach(model.settings.outputFormat.offeredSampleRates, id: \.self) { rate in
                         Text("\(rate) Hz").tag(String(rate))
                     }
+                }
+                if model.settings.outputFormat.restrictsSampleRate {
+                    Text("Opus accepts 8, 12, 16, 24, and 48 kHz. The default is 48 kHz.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Picker("Channels", selection: Binding(
@@ -191,6 +199,12 @@ struct SettingsPanel: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if model.settings.outputFormat.preservesSourceBitDepth {
+                        Text("Keeps the widest bit depth in the queue. A 24-bit master stays 24-bit.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 TextField(
@@ -228,6 +242,16 @@ struct SettingsPanel: View {
                 }
             }
         }
+    }
+
+    private var sampleRateSelection: String {
+        if let rate = model.settings.sampleRate {
+            return String(rate)
+        }
+        if model.settings.outputFormat.restrictsSampleRate {
+            return String(model.settings.outputFormat.defaultCombineSampleRate)
+        }
+        return "source"
     }
 
     private var vbrLabel: String {

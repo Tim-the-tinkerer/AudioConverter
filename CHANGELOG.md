@@ -5,6 +5,28 @@ All notable changes to **Audio Converter** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-21
+
+### Added
+
+- **Rip an audio CD.** macOS mounts the disc; the app lists its tracks, looks the album up on MusicBrainz, and encodes each track with the sidebar format
+- Track titles, artist, album, date, and track number are written as tags. A matched album looks up its front cover on the Cover Art Archive and embeds that picture as album art (ID3v2.3 for MP3) when the format can hold one
+- Files are saved under `Music/Audio Converter/Artist - Album/` as `01 - Title.ext`, never back onto the disc
+- Toolbar **Rip CD**, **Convert → Rip Audio CD…** (⌘R), and dropping the CD volume all open the rip sheet
+- Optional eject after every file in that batch succeeds
+- `--self-test` checks the MusicBrainz disc ID, table-of-contents parsing, and rip file names
+
+### Fixed
+
+- Overwrite no longer deletes the destination before encoding. The export is written to a temporary file and replaces the existing file only after it succeeds, so a failed or cancelled conversion leaves that file in place. A destination that matches any queued source is refused
+- Opus, Ogg (Opus), and WebM (Opus) default to 48 kHz. The sample-rate menu lists only the rates those encoders accept (8, 12, 16, 24, and 48 kHz)
+- Combining into FLAC, ALAC, or WavPack keeps the widest source bit depth. A 24-bit master no longer passes through 16-bit PCM on the way to FLAC
+
+### Changed
+
+- Embedded FFmpeg is **9.1**. Homebrew’s formula is still 9.0.2, so `scripts/build-ffmpeg.sh` builds 9.1 into `vendor/` and the app embeds that copy
+- `build-app.sh` finds the release binary with `swift build --show-bin-path`
+
 ## [1.1.2] - 2026-07-20
 
 ### Fixed

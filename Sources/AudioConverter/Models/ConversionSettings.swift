@@ -8,7 +8,7 @@ struct ConversionSettings: Equatable, Codable {
     var vbrQuality: Int = 2
     /// LAME joint stereo for MP3 (libmp3lame `-joint_stereo`). Default on; useful with VBR.
     var mp3JointStereo: Bool = true
-    var sampleRate: Int? = nil          // nil = keep source (per-file) or 44100 when combining
+    var sampleRate: Int? = nil          // nil = keep source, or the format's combine default (44.1 kHz, 48 kHz for Opus)
     var channels: Int? = nil            // nil = keep source; when combining defaults to stereo
     var pcmCodec: String = "pcm_s16le"  // for WAV/AIFF/CAF
     var flacCompression: Int = 5        // 0–12

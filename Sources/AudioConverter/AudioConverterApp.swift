@@ -1,6 +1,25 @@
 import SwiftUI
 
 @main
+enum AudioConverterMain {
+    static func main() {
+        let args = CommandLine.arguments
+        if args.contains("--help") || args.contains("-h") {
+            print("""
+            Audio Converter
+
+              --self-test   Check CD disc IDs, TOC parsing, rip names, and conversion rules
+              --help        Show this help
+            """)
+            exit(0)
+        }
+        if args.contains("--self-test") {
+            exit(CDSelfTest.run())
+        }
+        AudioConverterApp.main()
+    }
+}
+
 struct AudioConverterApp: App {
     @StateObject private var model = ConverterModel()
 
@@ -19,6 +38,13 @@ struct AudioConverterApp: App {
                 .keyboardShortcut("o", modifiers: .command)
             }
             CommandMenu("Convert") {
+                Button("Rip Audio CD…") {
+                    model.presentCDRipSheet = true
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                Divider()
+
                 Button("Start Conversion") {
                     model.startConversion()
                 }
@@ -100,9 +126,9 @@ struct SettingsHelpView: View {
             }
             Section("About") {
                 LabeledContent("Version") {
-                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.2")
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0")
                 }
-                Text("Audio Converter embeds FFmpeg to read and write major audio formats including MP3, AAC/M4A, M4B, ALAC, FLAC, WAV, AIFF, Ogg (Opus), Opus, WMA, AC-3, CAF, and more.")
+                Text("Audio Converter embeds FFmpeg to read and write major audio formats including MP3, AAC/M4A, M4B, ALAC, FLAC, WAV, AIFF, Ogg (Opus), Opus, WMA, AC-3, CAF, and more. It also rips audio CDs.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

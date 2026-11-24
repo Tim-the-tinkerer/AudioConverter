@@ -148,6 +148,7 @@
     <nav class="toc">
       <a href="#quickstart">Quick start</a>
       <a href="#queue">Queue</a>
+      <a href="#cd">CD ripping</a>
       <a href="#formats">Formats</a>
       <a href="#combine">Combine</a>
       <a href="#m4b">M4B chapters</a>
@@ -167,6 +168,7 @@
       </ol>
       <p class="muted" style="margin-bottom:0">
         Each file is probed with the embedded <code>ffprobe</code> so you can see duration, codec, sample rate, and channels before converting.
+        To rip a music CD, insert the disc and click <strong>Rip CD</strong>.
       </p>
     </div>
 
@@ -180,6 +182,39 @@
         <li><strong>Clear All</strong> empties the queue (not available while a conversion is running).</li>
         <li>Folders are scanned recursively for known audio extensions.</li>
       </ul>
+    </div>
+
+    <h2 id="cd">Ripping an audio CD</h2>
+    <div class="card">
+      <p>
+        Insert a music CD. macOS mounts it as a volume, one AIFF per track.
+        Click <strong>Rip CD</strong>, or choose <strong>Convert → Rip Audio CD…</strong>
+        (<kbd>⌘</kbd><kbd>R</kbd>).
+      </p>
+      <ol>
+        <li><strong>Look up metadata</strong> — this runs on its own. MusicBrainz fills the artist, album, date, and track titles when it knows the disc. Edit anything that looks wrong. A disc that is not listed can still be ripped; type the names yourself and look up again.</li>
+        <li><strong>Choose tracks</strong> — uncheck any track you want to skip.</li>
+        <li><strong>Choose a folder</strong> — the default is <code>Music/Audio Converter</code>. Nothing is written onto the CD.</li>
+        <li><strong>Rip</strong> — each selected track is encoded with the format and quality in the sidebar. Files are named <code>Artist - Album/01 - Title.flac</code> (the extension follows the format you picked).</li>
+      </ol>
+      <p>
+        When the album matches, the front cover is downloaded from the Cover Art Archive and embedded as album art.
+        That happens for MP3, M4A, M4B, ALAC, FLAC, and the other formats that can hold a picture. WAV and AIFF cannot.
+        The other tags written are title, artist, album, album artist, date, and track number.
+        Rip waits for that lookup to finish, so the picture is in the file even if you start immediately.
+      </p>
+      <p>
+        <strong>Eject when the rip finishes</strong> opens the drive only after every file in that batch succeeds.
+        <strong>Add to Queue</strong> lists the tracks without starting.
+        Dropping the CD’s volume on the window opens the same sheet.
+      </p>
+      <p>
+        If <strong>Combine</strong> is on, Rip joins the selected tracks into one file. For M4B, each track becomes a chapter.
+      </p>
+      <p class="muted" style="margin-bottom:0">
+        Tracks are read through the audio CD volume macOS mounts. A scratched disc can still click or skip.
+        MP3 CDs and other data discs are ordinary files — drop those on the window.
+      </p>
     </div>
 
     <h2 id="formats">Supported formats</h2>
@@ -264,6 +299,7 @@
       <ul>
         <li>Order is the queue order — drag rows or use <strong>Move Up / Move Down</strong>.</li>
         <li>Mixed codecs, sample rates, and mono/stereo sources are normalized before joining.</li>
+        <li>FLAC, ALAC, and WavPack keep the widest bit depth in the queue, so a 24-bit master stays 24-bit. WAV, AIFF, and CAF use the PCM depth you pick. A file name that matches one of the sources is refused.</li>
         <li>No chapter markers are written (continuous audio). For chapters, use <strong>M4B</strong>.</li>
         <li>Optional title / artist / album / file name apply to the combined file.</li>
         <li>Cover art is taken from the first source that has embedded artwork.</li>
@@ -322,7 +358,7 @@
           </tr>
           <tr>
             <td><strong>Sample rate</strong></td>
-            <td>Keep source rate, or force a common rate (44.1 kHz, 48 kHz, …).</td>
+            <td>Keep the source rate, or pick one. Combining uses 44.1 kHz unless you pick another rate. Opus, Ogg (Opus), and WebM (Opus) default to 48 kHz and only list rates those encoders accept: 8, 12, 16, 24, and 48 kHz.</td>
           </tr>
           <tr>
             <td><strong>Channels</strong></td>
@@ -338,7 +374,7 @@
           </tr>
           <tr>
             <td><strong>Overwrite existing</strong></td>
-            <td>If off, conversion fails when the destination file already exists.</td>
+            <td>If off, conversion fails when the destination file already exists. If on, the new file replaces that destination only after encoding succeeds. A failed or cancelled conversion leaves the existing file in place.</td>
           </tr>
           <tr>
             <td><strong>Copy metadata</strong></td>
@@ -352,7 +388,7 @@
       </table>
       <p class="muted" style="margin-bottom:0">
         Settings are applied when you start conversion. Change them between batches as needed.
-        The app will not overwrite a source file with the same path and extension — pick another format or folder.
+        A destination that matches any file in the queue is refused, including a combined file named like one of its own inputs. Pick another name or folder.
       </p>
     </div>
 
@@ -369,6 +405,10 @@
           <tr>
             <td>Add files…</td>
             <td><kbd>⌘</kbd><kbd>O</kbd></td>
+          </tr>
+          <tr>
+            <td>Rip audio CD…</td>
+            <td><kbd>⌘</kbd><kbd>R</kbd></td>
           </tr>
           <tr>
             <td>Start conversion</td>
@@ -395,7 +435,7 @@
       <ul>
         <li>The status line and Settings window show whether FFmpeg is <strong>embedded</strong>, from the <strong>system</strong>, or <strong>missing</strong>.</li>
         <li>Open <strong>Audio Converter → Settings…</strong> to see the full version string and recheck availability.</li>
-        <li>If FFmpeg is missing, rebuild with Homebrew FFmpeg installed: <code>brew install ffmpeg && ./build-app.sh</code>.</li>
+        <li>The embedded build is FFmpeg 9.1, produced by <code>scripts/build-ffmpeg.sh</code>. Homebrew’s own formula may be older. If FFmpeg is missing, run that script, then <code>./build-app.sh</code>.</li>
       </ul>
     </div>
 
@@ -430,6 +470,22 @@
             <td>You chose the same extension as the source with “save next to original”. Pick another format or an output folder.</td>
           </tr>
           <tr>
+            <td>Rip CD shows no disc</td>
+            <td>Wait until the CD appears in Finder, then click <strong>Refresh</strong>. It has to be a music CD in an internal or USB drive. A data CD is not listed here.</td>
+          </tr>
+          <tr>
+            <td>MusicBrainz has no entry</td>
+            <td>Type the artist, album, and track titles, then click <strong>Look Up Metadata</strong> again. A title search can still find the cover. The rip does not need a lookup.</td>
+          </tr>
+          <tr>
+            <td>Ripped files have no album art</td>
+            <td>The sheet says when a cover was found. WAV and AIFF cannot store a picture — choose MP3, M4A, FLAC, or ALAC. If the message says no cover art, the Cover Art Archive has no front image for that release.</td>
+          </tr>
+          <tr>
+            <td>A track fails while ripping</td>
+            <td>Clean the disc. Quit Music if it is using the drive, remove the failed row, and rip that track again.</td>
+          </tr>
+          <tr>
             <td>App won’t open (Gatekeeper)</td>
             <td>Right-click the app → <strong>Open</strong>, or run <code>xattr -cr AudioConverter.app</code>.</td>
           </tr>
@@ -438,7 +494,7 @@
     </div>
 
     <div class="footer">
-      Audio Converter <strong>1.1.2</strong> · help ships inside the app bundle as <code>Help.html</code>.
+      Audio Converter <strong>1.2.0</strong> · help ships inside the app bundle as <code>Help.html</code>.
       FFmpeg is LGPL/GPL depending on how it was built; respect third-party codec licenses if you redistribute the app.
     </div>
   </main>

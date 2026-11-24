@@ -11,9 +11,16 @@ FRAMEWORKS="${CONTENTS}/Frameworks"
 
 mkdir -p "${FRAMEWORKS}" "${BIN_DIR}"
 
-# Prefer Homebrew binaries; fall back to PATH.
+# Prefer an explicit path, then a local 9.1+ build in vendor/, then Homebrew.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FFMPEG_SRC="${FFMPEG_PATH:-}"
 FFPROBE_SRC="${FFPROBE_PATH:-}"
+if [ -z "${FFMPEG_SRC}" ] && [ -x "${ROOT}/vendor/bin/ffmpeg" ]; then
+  FFMPEG_SRC="${ROOT}/vendor/bin/ffmpeg"
+fi
+if [ -z "${FFPROBE_SRC}" ] && [ -x "${ROOT}/vendor/bin/ffprobe" ]; then
+  FFPROBE_SRC="${ROOT}/vendor/bin/ffprobe"
+fi
 if [ -z "${FFMPEG_SRC}" ]; then
   for candidate in /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg; do
     if [ -x "$candidate" ]; then FFMPEG_SRC="$candidate"; break; fi

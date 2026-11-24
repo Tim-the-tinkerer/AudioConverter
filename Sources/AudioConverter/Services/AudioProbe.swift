@@ -71,6 +71,11 @@ enum AudioProbe {
         else if let s = audio["channels"] as? String { channels = Int(s) }
 
         let codec = audio["codec_name"] as? String
+        let depth = AudioBitDepth.interpret(
+            bitsPerRawSample: intValue(audio["bits_per_raw_sample"]),
+            bitsPerSample: intValue(audio["bits_per_sample"]),
+            sampleFormat: audio["sample_fmt"] as? String
+        )
 
         var tags: [String: String] = [:]
         if let formatTags = format["tags"] as? [String: Any] {
@@ -123,10 +128,19 @@ enum AudioProbe {
             sampleRate: sampleRate,
             channels: channels,
             codecName: codec,
+            bitsPerSample: depth.bitsPerSample,
+            floatingPoint: depth.floatingPoint,
             tags: tags,
             chapters: chapters,
             coverStreamIndex: coverStreamIndex
         )
+    }
+
+    private static func intValue(_ any: Any?) -> Int? {
+        if let n = any as? Int { return n }
+        if let n = any as? NSNumber { return n.intValue }
+        if let s = any as? String { return Int(s) }
+        return nil
     }
 
     private static func doubleValue(_ any: Any?) -> Double? {

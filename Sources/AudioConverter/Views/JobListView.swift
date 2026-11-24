@@ -150,8 +150,8 @@ struct JobRowView: View {
             }
 
             HStack {
-                if let probe = job.probe {
-                    Text(probe.summary)
+                if job.probe != nil {
+                    Text(job.queueDetail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

@@ -5,6 +5,9 @@ enum ConversionError: LocalizedError {
     case cancelled
     case failed(String)
     case outputExists(URL)
+    case destinationOverlapsSource(String)
+    /// The finished export could not take the destination's place. The temp file is left in the folder.
+    case replaceFailed(URL)
     case noChapters
 
     var errorDescription: String? {
@@ -13,6 +16,10 @@ enum ConversionError: LocalizedError {
         case .cancelled: return "Cancelled"
         case .failed(let s): return s
         case .outputExists(let u): return "Output already exists: \(u.lastPathComponent)"
+        case .destinationOverlapsSource(let name):
+            return "Destination matches a queued file (\(name)). Choose another name or folder."
+        case .replaceFailed(let temp):
+            return "Could not replace the existing file. The finished export was left at \(temp.path)"
         case .noChapters: return "Need at least one ready audio file with a known duration"
         }
     }
@@ -52,6 +59,10 @@ final class ConversionEngine: @unchecked Sendable {
         settings: ConversionSettings,
         durationHint: Double?,
         coverStreamIndex: Int? = nil,
+        coverFileURL: URL? = nil,
+        metadataOverrides: [String: String] = [:],
+        skipSourceCoverScan: Bool = false,
+        queuedSources: [URL] = [],
         onProgress: @escaping (Double) -> Void,
         onLog: @escaping (String) -> Void
     ) throws {
@@ -60,8 +71,7 @@ final class ConversionEngine: @unchecked Sendable {
         }
         if isCancelled { throw ConversionError.cancelled }
 
-        try prepareOutput(output, settings: settings)
-
+        let protected = queuedSources.isEmpty ? [source] : queuedSources
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory.appendingPathComponent("AudioConverter-Art-\(UUID().uuidString)", isDirectory: true)
         defer { try? fm.removeItem(at: tempDir) }
@@ -70,17 +80,23 @@ final class ConversionEngine: @unchecked Sendable {
         var includeCover = false
         var coverPath: String?
         if wantArt {
-            try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            let dest = tempDir.appendingPathComponent("cover.jpg")
-            let index = coverStreamIndex ?? CoverArtHelper.coverStreamIndex(in: source)
-            if let index, CoverArtHelper.extractCoverArt(from: source, to: dest, streamIndex: index) {
+            if let coverFileURL, fm.fileExists(atPath: coverFileURL.path) {
                 includeCover = true
-                coverPath = dest.path
-                onLog("Embedded artwork: extracted cover → re-attaching\n")
-            } else if index == nil {
-                onLog("Embedded artwork: none found on source\n")
-            } else {
-                onLog("Embedded artwork: extract failed; converting without cover\n")
+                coverPath = coverFileURL.path
+                onLog("Embedded artwork: using cover file\n")
+            } else if !skipSourceCoverScan {
+                try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                let dest = tempDir.appendingPathComponent("cover.jpg")
+                let index = coverStreamIndex ?? CoverArtHelper.coverStreamIndex(in: source)
+                if let index, CoverArtHelper.extractCoverArt(from: source, to: dest, streamIndex: index) {
+                    includeCover = true
+                    coverPath = dest.path
+                    onLog("Embedded artwork: extracted cover → re-attaching\n")
+                } else if index == nil {
+                    onLog("Embedded artwork: none found on source\n")
+                } else {
+                    onLog("Embedded artwork: extract failed; converting without cover\n")
+                }
             }
         }
 
@@ -96,6 +112,9 @@ final class ConversionEngine: @unchecked Sendable {
 
         // Stream maps: audio + optional cover (never full movie video)
         args += CoverArtHelper.mappingArgs(includeCover: includeCover, coverInputIndex: 1)
+        if includeCover {
+            args += CoverArtHelper.pictureTagArguments(for: settings.outputFormat)
+        }
 
         // Metadata tags (independent of artwork)
         if settings.copyMetadata {
@@ -103,23 +122,19 @@ final class ConversionEngine: @unchecked Sendable {
         } else {
             args += ["-map_metadata", "-1"]
         }
+        args += Self.metadataArguments(metadataOverrides)
 
         args += settings.outputFormat.ffmpegCodecArgs(settings: settings)
-        args.append(output.path)
 
-        do {
-            try runFFmpeg(arguments: args, durationHint: durationHint, onProgress: onProgress, onLog: onLog)
-            try verifyOutput(output)
-            onProgress(1.0)
-        } catch let error as ConversionError {
-            // Never delete a pre-existing file we refused to overwrite.
-            if case .outputExists = error { throw error }
-            try? FileManager.default.removeItem(at: output)
-            throw error
-        } catch {
-            try? FileManager.default.removeItem(at: output)
-            throw error
+        if settings.overwriteExisting, fm.fileExists(atPath: output.path) {
+            onLog("Keeping \(output.lastPathComponent) until the export succeeds.\n")
         }
+        try export(to: output, settings: settings, sources: protected) { staging in
+            var staged = args
+            staged.append(staging.path)
+            try runFFmpeg(arguments: staged, durationHint: durationHint, onProgress: onProgress, onLog: onLog)
+        }
+        onProgress(1.0)
     }
 
     // MARK: - Multi-file combine (any format)
@@ -134,6 +149,8 @@ final class ConversionEngine: @unchecked Sendable {
         output: URL,
         settings: ConversionSettings,
         writeChapters: Bool,
+        coverFileURL: URL? = nil,
+        extractSourceCover: Bool = true,
         onProgress: @escaping (Double) -> Void,
         onLog: @escaping (String) -> Void
     ) throws {
@@ -149,6 +166,8 @@ final class ConversionEngine: @unchecked Sendable {
             }
         }
 
+        let sourceURLs = segments.map(\.url)
+        try OutputPathSafety.rejectOverlap(destination: output, sources: sourceURLs)
         try prepareOutput(output, settings: settings)
 
         let fm = FileManager.default
@@ -160,11 +179,18 @@ final class ConversionEngine: @unchecked Sendable {
         let metaURL = tempDir.appendingPathComponent("meta.ffmeta")
         let coverURL = tempDir.appendingPathComponent("cover.jpg")
 
-        let targetRate = settings.sampleRate ?? 44100
+        let targetRate = settings.outputFormat.combineSampleRate(explicit: settings.sampleRate)
         let targetChannels = settings.channels ?? 2
+        let pcmCodec = CombinePCM.intermediateCodec(
+            format: settings.outputFormat,
+            pcmCodec: settings.pcmCodec,
+            sources: segments.map {
+                CombinePCM.Source(bitsPerSample: $0.bitsPerSample, floatingPoint: $0.floatingPoint)
+            }
+        )
         let estimatedTotal = M4BChapterBuilder.totalDuration(segments)
 
-        onLog("Normalizing \(segments.count) file(s) to PCM (\(targetRate) Hz, \(targetChannels) ch)…\n")
+        onLog("Normalizing \(segments.count) file(s) to PCM (\(targetRate) Hz, \(targetChannels) ch, \(pcmCodec))…\n")
 
         var normalized: [M4BChapterSource] = []
         var wavURLs: [URL] = []
@@ -183,6 +209,7 @@ final class ConversionEngine: @unchecked Sendable {
                 wavURL: wavURL,
                 sampleRate: targetRate,
                 channels: targetChannels,
+                pcmCodec: pcmCodec,
                 durationHint: ch.durationSeconds,
                 onProgress: { p in onProgress(base + span * p) },
                 onLog: onLog
@@ -240,11 +267,27 @@ final class ConversionEngine: @unchecked Sendable {
             onLog("Combining \(normalized.count) file(s) into one \(settings.outputFormat.displayName) (no chapters)\n")
         }
 
-        let hasCover = CoverArtHelper.extractCoverArt(fromSources: segments.map(\.url), to: coverURL)
-        if hasCover {
-            onLog("Embedded artwork: using cover from sources\n")
-        } else {
-            onLog("Embedded artwork: none found on sources\n")
+        var attachedCover = coverURL
+        var hasCover = false
+        if let coverFileURL, fm.fileExists(atPath: coverFileURL.path) {
+            let ext = coverFileURL.pathExtension.isEmpty ? "jpg" : coverFileURL.pathExtension
+            attachedCover = tempDir.appendingPathComponent("cover.\(ext)")
+            do {
+                try fm.copyItem(at: coverFileURL, to: attachedCover)
+                hasCover = true
+                onLog("Embedded artwork: using cover file\n")
+            } catch {
+                onLog("Embedded artwork: could not copy cover file\n")
+            }
+        }
+        if !hasCover, extractSourceCover {
+            hasCover = CoverArtHelper.extractCoverArt(fromSources: segments.map(\.url), to: coverURL)
+            attachedCover = coverURL
+            if hasCover {
+                onLog("Embedded artwork: using cover from sources\n")
+            } else {
+                onLog("Embedded artwork: none found on sources\n")
+            }
         }
 
         let format = settings.outputFormat
@@ -261,7 +304,7 @@ final class ConversionEngine: @unchecked Sendable {
             "-i", metaURL.path,
         ]
         if hasCover && format.supportsEmbeddedArtwork {
-            args += ["-i", coverURL.path]
+            args += ["-i", attachedCover.path]
         }
 
         args += ["-map", "0:a:0"]
@@ -272,6 +315,7 @@ final class ConversionEngine: @unchecked Sendable {
                 "-q:v", "2",
                 "-disposition:v:0", "attached_pic",
             ]
+            args += CoverArtHelper.pictureTagArguments(for: format)
         }
 
         // Apply global metadata from the FFMETADATA input
@@ -292,26 +336,22 @@ final class ConversionEngine: @unchecked Sendable {
             encodeSettings.preserveChapters = false
         }
         args += format.ffmpegCodecArgs(settings: encodeSettings)
-        args.append(output.path)
 
         let totalDuration = M4BChapterBuilder.totalDuration(normalized)
-        do {
+        if settings.overwriteExisting, fm.fileExists(atPath: output.path) {
+            onLog("Keeping \(output.lastPathComponent) until the export succeeds.\n")
+        }
+        try export(to: output, settings: settings, sources: sourceURLs) { staging in
+            var staged = args
+            staged.append(staging.path)
             try runFFmpeg(
-                arguments: args,
+                arguments: staged,
                 durationHint: totalDuration > 0 ? totalDuration : estimatedTotal,
                 onProgress: { p in onProgress(0.70 + 0.30 * p) },
                 onLog: onLog
             )
-            try verifyOutput(output)
-            onProgress(1.0)
-        } catch let error as ConversionError {
-            if case .outputExists = error { throw error }
-            try? FileManager.default.removeItem(at: output)
-            throw error
-        } catch {
-            try? FileManager.default.removeItem(at: output)
-            throw error
         }
+        onProgress(1.0)
     }
 
     /// Build a chaptered M4B from mixed sources (convenience wrapper).
@@ -338,6 +378,7 @@ final class ConversionEngine: @unchecked Sendable {
         wavURL: URL,
         sampleRate: Int,
         channels: Int,
+        pcmCodec: String,
         durationHint: Double?,
         onProgress: @escaping (Double) -> Void,
         onLog: @escaping (String) -> Void
@@ -351,7 +392,7 @@ final class ConversionEngine: @unchecked Sendable {
             "-map", "0:a:0",
             "-ac", "\(channels)",
             "-ar", "\(sampleRate)",
-            "-c:a", "pcm_s16le",
+            "-c:a", pcmCodec,
             "-f", "wav",
             wavURL.path,
         ]
@@ -361,14 +402,87 @@ final class ConversionEngine: @unchecked Sendable {
 
     // MARK: - Shared process runner
 
+    /// `-metadata` overrides. Keys are limited to the tags a CD rip writes.
+    private static func metadataArguments(_ overrides: [String: String]) -> [String] {
+        let allowed: Set<String> = ["title", "artist", "album", "album_artist", "date", "track", "disc", "genre"]
+        var args: [String] = []
+        for key in overrides.keys.sorted() where allowed.contains(key) {
+            let value = overrides[key, default: ""]
+                .replacingOccurrences(of: "\0", with: "")
+                .replacingOccurrences(of: "\r\n", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { continue }
+            args += ["-metadata", "\(key)=\(value)"]
+        }
+        return args
+    }
+
+    /// Encode to a sibling temporary file. The destination is replaced only after `encode` returns.
+    /// A failure or cancel deletes the temporary file and leaves an existing destination alone.
+    private func export(
+        to destination: URL,
+        settings: ConversionSettings,
+        sources: [URL],
+        encode: (URL) throws -> Void
+    ) throws {
+        try OutputPathSafety.rejectOverlap(destination: destination, sources: sources)
+        try prepareOutput(destination, settings: settings)
+
+        let staging = stagingURL(for: destination)
+        var keepStaging = false
+        defer {
+            if !keepStaging {
+                try? FileManager.default.removeItem(at: staging)
+            }
+        }
+
+        do {
+            try encode(staging)
+            try verifyOutput(staging)
+            try publish(temporary: staging, to: destination, overwrite: settings.overwriteExisting)
+        } catch let error as ConversionError {
+            if case .replaceFailed = error {
+                keepStaging = true
+            }
+            throw error
+        }
+    }
+
+    /// Hidden sibling of the destination so the replace stays on the same volume.
+    private func stagingURL(for destination: URL) -> URL {
+        let ext = destination.pathExtension
+        let stem = destination.deletingPathExtension().lastPathComponent
+        let name = ".\(stem).audioconverter-\(UUID().uuidString).\(ext)"
+        return destination.deletingLastPathComponent().appendingPathComponent(name)
+    }
+
+    private func publish(temporary: URL, to destination: URL, overwrite: Bool) throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: destination.path) {
+            guard overwrite else {
+                throw ConversionError.outputExists(destination)
+            }
+            do {
+                _ = try fm.replaceItemAt(destination, withItemAt: temporary)
+            } catch {
+                throw ConversionError.replaceFailed(temporary)
+            }
+        } else {
+            do {
+                try fm.moveItem(at: temporary, to: destination)
+            } catch {
+                throw ConversionError.replaceFailed(temporary)
+            }
+        }
+    }
+
+    /// Create the destination folder. An existing file is left in place until the export succeeds.
     private func prepareOutput(_ output: URL, settings: ConversionSettings) throws {
         let fm = FileManager.default
-        if fm.fileExists(atPath: output.path) {
-            if settings.overwriteExisting {
-                try fm.removeItem(at: output)
-            } else {
-                throw ConversionError.outputExists(output)
-            }
+        if fm.fileExists(atPath: output.path), !settings.overwriteExisting {
+            throw ConversionError.outputExists(output)
         }
         try fm.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
     }

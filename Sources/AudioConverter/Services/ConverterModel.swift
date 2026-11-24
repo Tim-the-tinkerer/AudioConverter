@@ -13,14 +13,31 @@ final class ConverterModel: ObservableObject {
     @Published var ffmpegBundled: Bool = false
     /// Shared progress for multi-file combine builds (0…1).
     @Published var combineProgress: Double = 0
+    /// Audio CDs currently mounted by macOS.
+    @Published var audioCDs: [AudioCD] = []
+    /// Set from the Convert menu. The main window presents the rip sheet.
+    @Published var presentCDRipSheet = false
 
     private let engine = ConversionEngine()
+    private let cdMonitor = CDMonitor()
     private var convertTask: Task<Void, Never>?
     /// In-flight probes keyed by job id — avoids double-probe races.
     private var probeTasks: [UUID: Task<Void, Never>] = [:]
+    /// Volume to eject after the batch that Rip just started, if every file succeeds.
+    private var cdEjectAfterBatch: URL?
 
     init() {
         refreshFFmpegStatus()
+        cdMonitor.onUpdate = { [weak self] discs in
+            Task { @MainActor in
+                self?.setAudioCDs(discs)
+            }
+        }
+        cdMonitor.start()
+    }
+
+    deinit {
+        cdMonitor.stop()
     }
 
     /// Combine queue into one output file (any format).
@@ -58,13 +75,19 @@ final class ConverterModel: ObservableObject {
     func addURLs(_ urls: [URL]) {
         var seen = Set(jobs.map { $0.sourceURL.standardizedFileURL.path })
         var added = 0
+        var sawCD = false
         for url in urls {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                addDirectory(url)
+            let standardized = url.standardizedFileURL
+            if CDDriveScanner.isAudioCDVolume(standardized) {
+                sawCD = true
+                presentCDRipSheet = true
                 continue
             }
-            let standardized = url.standardizedFileURL
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: standardized.path, isDirectory: &isDir), isDir.boolValue {
+                addDirectory(standardized)
+                continue
+            }
             guard seen.insert(standardized.path).inserted else { continue }
             let ext = standardized.pathExtension.lowercased()
             let looksAudio = AudioInputSupport.extensions.contains(ext)
@@ -79,6 +102,130 @@ final class ConverterModel: ObservableObject {
         if added > 0 {
             statusMessage = "Added \(added) file\(added == 1 ? "" : "s")"
             maybeFillCombinedTitle()
+        } else if sawCD {
+            statusMessage = "Audio CD ready — name the tracks, then rip"
+        }
+    }
+
+    /// Encode tracks from the rip sheet. `start` begins conversion immediately.
+    func addCDRip(_ request: CDRipRequest, start: Bool) {
+        guard !isConverting else { return }
+        var seen = Set(jobs.map { $0.sourceURL.standardizedFileURL.path })
+        let folder = CDNaming.albumFolder(
+            artist: request.albumArtist,
+            album: request.album,
+            volumeName: request.volumeName
+        )
+        let directory = request.destinationRoot.appendingPathComponent(folder, isDirectory: true)
+        var added = 0
+
+        for track in request.tracks where track.included {
+            guard let source = track.sourceURL else { continue }
+            let standardized = source.standardizedFileURL
+            guard seen.insert(standardized.path).inserted else { continue }
+
+            let job = ConversionJob(sourceURL: standardized)
+            let title = track.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            job.chapterTitle = title.isEmpty ? String(format: "Track %02d", track.number) : title
+            job.outputDirectoryOverride = directory
+            job.outputBaseNameOverride = CDNaming.fileBase(number: track.number, title: job.chapterTitle)
+            let trackArtist = track.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+            job.metadataOverrides = CDTags.dictionary(
+                title: job.chapterTitle,
+                artist: trackArtist,
+                albumArtist: request.albumArtist,
+                album: request.album,
+                date: request.date,
+                track: track.number,
+                trackCount: max(request.discTrackCount, track.number)
+            )
+            job.coverFileURL = request.coverFileURL
+            job.skipSourceCoverScan = true
+            job.skipSourceProbe = track.durationSeconds != nil
+            if let duration = track.durationSeconds, duration > 0 {
+                job.probe = AudioProbeInfo(
+                    formatName: "cdda",
+                    durationSeconds: duration,
+                    bitrate: 1_411_200,
+                    sampleRate: 44100,
+                    channels: 2,
+                    codecName: "pcm_s16be",
+                    bitsPerSample: 16,
+                    floatingPoint: false,
+                    tags: job.metadataOverrides,
+                    chapters: [],
+                    coverStreamIndex: nil
+                )
+                job.status = .ready
+            }
+            jobs.append(job)
+            added += 1
+        }
+
+        fillCombinedFieldsIfEmpty(artist: request.albumArtist, album: request.album)
+        guard added > 0 else {
+            statusMessage = "Those CD tracks are already in the queue"
+            return
+        }
+        statusMessage = "Added \(added) CD track\(added == 1 ? "" : "s")"
+        guard start else { return }
+        cdEjectAfterBatch = request.ejectVolumeURL
+        startConversion()
+    }
+
+    func rescanAudioCDs() {
+        cdMonitor.rescanSoon()
+    }
+
+    func ejectVolume(_ url: URL) {
+        do {
+            try NSWorkspace.shared.unmountAndEjectDevice(at: url)
+            statusMessage = "Disc ejected"
+        } catch {
+            statusMessage = "Could not eject the disc"
+        }
+    }
+
+    private func setAudioCDs(_ discs: [AudioCD]) {
+        guard discs != audioCDs else { return }
+        let wasEmpty = audioCDs.isEmpty
+        audioCDs = discs
+        guard wasEmpty, let first = discs.first, !isConverting else { return }
+        let count = first.ripableTrackCount
+        guard count > 0 else { return }
+        statusMessage = "Audio CD ready — \(count) track\(count == 1 ? "" : "s")"
+    }
+
+    /// CD rips name a folder of their own. A combined file must land there too,
+    /// because the track files live on a read-only disc.
+    private func combinedOutputURL(for jobs: [ConversionJob], settings: ConversionSettings, sources: [URL]) -> URL {
+        let proposed = settings.combinedOutputURL(sources: sources)
+        guard let directory = jobs.compactMap(\.outputDirectoryOverride).first else {
+            return proposed
+        }
+        return directory.appendingPathComponent(proposed.lastPathComponent)
+    }
+
+    private func fillCombinedFieldsIfEmpty(artist: String, album: String) {
+        if settings.combinedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            settings.combinedTitle = album
+        }
+        if settings.combinedAuthor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            settings.combinedAuthor = artist
+        }
+        if settings.combinedAlbum.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            settings.combinedAlbum = album
+        }
+    }
+
+    private func finishCDEject(failed: Int, cancelled: Int) {
+        defer { cdEjectAfterBatch = nil }
+        guard failed == 0, cancelled == 0, let url = cdEjectAfterBatch else { return }
+        do {
+            try NSWorkspace.shared.unmountAndEjectDevice(at: url)
+            statusMessage += " Disc ejected."
+        } catch {
+            statusMessage += " The disc could not be ejected."
         }
     }
 
@@ -154,6 +301,15 @@ final class ConverterModel: ObservableObject {
     // MARK: - Probe
 
     private func probe(_ job: ConversionJob) async {
+        if job.skipSourceProbe, job.probe != nil {
+            switch job.status {
+            case .failed, .pending, .probing, .cancelled:
+                job.status = .ready
+            default:
+                break
+            }
+            return
+        }
         // Coalesce concurrent probes for the same job (addURLs + Convert).
         if let existing = probeTasks[job.id] {
             await existing.value
@@ -199,6 +355,7 @@ final class ConverterModel: ObservableObject {
 
     func startConversion() {
         guard ffmpegAvailable else {
+            cdEjectAfterBatch = nil
             statusMessage = "FFmpeg is not available"
             return
         }
@@ -217,6 +374,7 @@ final class ConverterModel: ObservableObject {
             }
         }
         guard !pending.isEmpty else {
+            cdEjectAfterBatch = nil
             statusMessage = "Nothing to convert"
             return
         }
@@ -247,6 +405,8 @@ final class ConverterModel: ObservableObject {
             } else {
                 self.statusMessage = "Finished — \(batchOK) succeeded, \(batchFail) failed"
             }
+            let cancelled = batchCancel > 0 || self.engine.isCancelled || Task.isCancelled
+            self.finishCDEject(failed: batchFail, cancelled: cancelled ? 1 : 0)
             self.refreshFFmpegStatus(updateStatus: false)
         }
     }
@@ -261,7 +421,20 @@ final class ConverterModel: ObservableObject {
             }
         }
         guard !candidates.isEmpty else {
+            cdEjectAfterBatch = nil
             statusMessage = "Add audio files to combine"
+            return
+        }
+
+        let plannedSources = candidates.map(\.sourceURL)
+        let plannedOutput = combinedOutputURL(for: candidates, settings: settings, sources: plannedSources)
+        if let conflict = OutputPathSafety.firstOverlap(destination: plannedOutput, sources: plannedSources) {
+            let message = OutputPathSafety.message(for: conflict)
+            for job in candidates {
+                job.status = .failed(message)
+            }
+            cdEjectAfterBatch = nil
+            statusMessage = message
             return
         }
 
@@ -294,7 +467,9 @@ final class ConverterModel: ObservableObject {
                 return M4BChapterSource(
                     url: job.sourceURL,
                     title: title.isEmpty ? ConversionSettings.defaultChapterTitle(from: job.sourceURL) : title,
-                    durationSeconds: duration
+                    durationSeconds: duration,
+                    bitsPerSample: job.probe?.bitsPerSample,
+                    floatingPoint: job.probe?.floatingPoint ?? false
                 )
             }
 
@@ -305,11 +480,12 @@ final class ConverterModel: ObservableObject {
                     }
                 }
                 self.isConverting = false
+                self.cdEjectAfterBatch = nil
                 self.statusMessage = "Every file needs a valid duration — remove unreadable files"
                 return
             }
 
-            let output = settingsSnapshot.combinedOutputURL(sources: segments.map(\.url))
+            let output = combinedOutputURL(for: candidates, settings: settingsSnapshot, sources: segments.map(\.url))
             for job in candidates {
                 job.status = .converting
                 job.progress = 0
@@ -317,6 +493,8 @@ final class ConverterModel: ObservableObject {
                 job.logTail = ""
             }
 
+            let cover = candidates.compactMap(\.coverFileURL).first
+            let extractCover = !candidates.allSatisfy(\.skipSourceCoverScan)
             do {
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
                     DispatchQueue.global(qos: .userInitiated).async {
@@ -326,6 +504,8 @@ final class ConverterModel: ObservableObject {
                                 output: output,
                                 settings: settingsSnapshot,
                                 writeChapters: writeChapters,
+                                coverFileURL: cover,
+                                extractSourceCover: extractCover,
                                 onProgress: { p in
                                     Task { @MainActor in
                                         self.combineProgress = p
@@ -362,6 +542,7 @@ final class ConverterModel: ObservableObject {
                 } else {
                     self.statusMessage = "Created \(output.lastPathComponent) from \(segments.count) files"
                 }
+                self.finishCDEject(failed: 0, cancelled: 0)
             } catch let error as ConversionError {
                 let message: String
                 switch error {
@@ -373,10 +554,17 @@ final class ConverterModel: ObservableObject {
                     for job in candidates { job.status = .failed(message) }
                 }
                 self.statusMessage = message
+                switch error {
+                case .cancelled:
+                    self.finishCDEject(failed: 0, cancelled: 1)
+                default:
+                    self.finishCDEject(failed: 1, cancelled: 0)
+                }
             } catch {
                 let message = error.localizedDescription
                 for job in candidates { job.status = .failed(message) }
                 self.statusMessage = message
+                self.finishCDEject(failed: 1, cancelled: 0)
             }
 
             self.isConverting = false
@@ -399,9 +587,17 @@ final class ConverterModel: ObservableObject {
             return
         }
 
-        let output = settings.outputURL(for: job.sourceURL)
-        if output.standardizedFileURL.path == job.sourceURL.standardizedFileURL.path {
-            job.status = .failed("Source and output paths are the same — choose another format or folder")
+        let output: URL
+        if let directory = job.outputDirectoryOverride,
+           let base = job.outputBaseNameOverride,
+           !base.isEmpty {
+            output = directory.appendingPathComponent("\(base).\(settings.outputFormat.fileExtension)")
+        } else {
+            output = settings.outputURL(for: job.sourceURL)
+        }
+        let queuedSources = jobs.map(\.sourceURL)
+        if let conflict = OutputPathSafety.firstOverlap(destination: output, sources: queuedSources) {
+            job.status = .failed(OutputPathSafety.message(for: conflict))
             return
         }
 
@@ -413,6 +609,9 @@ final class ConverterModel: ObservableObject {
         let duration = job.probe?.durationSeconds
         let source = job.sourceURL
         let coverIndex = job.probe?.coverStreamIndex
+        let coverFile = job.coverFileURL
+        let metadata = job.metadataOverrides
+        let skipCover = job.skipSourceCoverScan
 
         do {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
@@ -424,6 +623,10 @@ final class ConverterModel: ObservableObject {
                             settings: settings,
                             durationHint: duration,
                             coverStreamIndex: coverIndex,
+                            coverFileURL: coverFile,
+                            metadataOverrides: metadata,
+                            skipSourceCoverScan: skipCover,
+                            queuedSources: queuedSources,
                             onProgress: { p in
                                 Task { @MainActor in
                                     job.progress = p
@@ -514,6 +717,13 @@ final class ConverterModel: ObservableObject {
             if settings.pcmCodec == "pcm_s16be" {
                 settings.pcmCodec = "pcm_s16le"
             }
+        }
+        if format.restrictsSampleRate {
+            let allowed = format.offeredSampleRates
+            if let rate = settings.sampleRate, allowed.contains(rate) {
+                return
+            }
+            settings.sampleRate = format.defaultCombineSampleRate
         }
     }
 }
